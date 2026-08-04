@@ -60,3 +60,6 @@ layer_2/Keyframe_Extracting/unilm/
 .DS_Store
 *.log
 .ipynb_checkpoints/
+
+# Claude Code local state
+.claude/
