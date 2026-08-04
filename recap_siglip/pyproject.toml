@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keyframe-pipeline"
+version = "0.1.0"
+description = "SigLIP embeddings and Ollama captions for keyframe datasets"
+requires-python = ">=3.10"
+dependencies = [
+    # numpy<2 và torch>=2.1 để khớp base image pytorch:2.1.2-cuda11.8 (numpy 1.26,
+    # torch 2.1.2): nới ra là pip cài đè torch 2.5 GB vào ổ / vốn đã gần đầy.
+    "numpy>=1.26,<2",
+    "Pillow>=10",
+    "torch>=2.1",
+    # Cận trên bắt buộc: từ 4.47 transformers gọi torch.utils._pytree.register_pytree_node,
+    # torch 2.1.2 của base image mới chỉ có _register_pytree_node -> import là AttributeError.
+    "transformers>=4.40,<4.47",
+    "ollama>=0.4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+keyframe-pipeline = "keyframe_pipeline.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["keyframe_pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "integration: requires external models or services",
+    "slow: long-running inference test",
+]

@@ -1,0 +1,4 @@
+experiments/
+output/
+__pycache__/
+.env

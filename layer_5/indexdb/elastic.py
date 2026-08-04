@@ -1,0 +1,50 @@
+from elasticsearch import Elasticsearch
+from indexdb.config import Config
+
+MAPPING = {
+    "settings": {
+        "analysis": {
+            "analyzer": {
+                "vi_analyzer": {
+                    "type": "custom",
+                    "tokenizer": "vi_tokenizer",
+                    # asciifolding: OCR residual errors are almost always a
+                    # missing/wrong diacritic ("giay" for "giây"), never a
+                    # wrong base letter. Folding both index and query side
+                    # (same analyzer is used for search by default) makes
+                    # those equivalent instead of needing perfect OCR text.
+                    "filter": ["lowercase", "asciifolding"],
+                }
+            }
+        }
+    },
+    "mappings": {
+        "properties": {
+            "frame_id":     {"type": "keyword"},
+            "video_id":     {"type": "keyword"},
+            "shot_id":      {"type": "keyword"},
+            "timestamp_ms": {"type": "long"},
+            "ocr_text":    {"type": "text", "analyzer": "vi_analyzer", "copy_to": "content_all"},
+            # OCR có 2 nguồn: PaddleOCR gốc (ocr_text) và bản đã hiệu đính qua
+            # NVIDIA API ở stage 2 layer_3/OCR (ocr_api) — giữ riêng để A/B.
+            "ocr_api":     {"type": "text", "analyzer": "vi_analyzer", "copy_to": "content_all"},
+            "caption":     {"type": "text", "analyzer": "vi_analyzer", "copy_to": "content_all"},
+            "transcript":  {"type": "text", "analyzer": "vi_analyzer", "copy_to": "content_all"},
+            "content_all": {"type": "text", "analyzer": "vi_analyzer"},
+            "object_tags": {"type": "keyword"},
+        }
+    },
+}
+
+class ElasticStore:
+    def __init__(self, cfg: Config, index_name: str = "frame_text"):
+        self.client = Elasticsearch(cfg.elastic_uri)
+        self.index_name = index_name
+
+    def create_index(self):
+        if not self.client.indices.exists(index=self.index_name):
+            self.client.indices.create(index=self.index_name, body=MAPPING)
+
+    def drop_index(self):
+        if self.client.indices.exists(index=self.index_name):
+            self.client.indices.delete(index=self.index_name)

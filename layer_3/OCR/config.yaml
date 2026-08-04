@@ -1,0 +1,61 @@
+# OCR Pipeline Configuration -- 2 stages, run separately (see README.md)
+#   Stage 1 (run_paddle.py):  GPU detection+recognition -> raw ASCII text
+#   Stage 2 (run_correct.py): ising-calibration VLM restores diacritics
+# -----------------------------------------------------------------------------
+
+paddle:
+  # run_paddle.sh always passes --input pointing at
+  # ../../layer_2/Keyframe_Extracting/benchmark/<PIPELINE> -- this is only the
+  # fallback for calling run_paddle.py directly without the wrapper script.
+  input_dir: "../../layer_2/Keyframe_Extracting/benchmark/pipeline_c"
+  # VietOCR result (with per-box fallback to Paddle's own recognizer below
+  # confidence_threshold, see ocr/paddle_engine.py) -- this is what stage 2 corrects.
+  output_file: "./output/output_vietocr.json"
+  # Paddle's own recognizer output, untouched by the fallback above -- kept
+  # only for comparing the two recognizers, not consumed by stage 2.
+  output_file_paddle_origin: "./output/output_paddle_origin.json"
+
+  # 0 = no limit (process every frame found in input_dir)
+  limit: 0
+
+  # Save output_file every N frames and resume from it on restart. 0 disables.
+  checkpoint_every: 5000
+
+  # CLAHE + auto news-band crop before OCR. Measured HARMFUL on this dataset
+  # (48/60 test frames corrupted, several lost the channel logo/timestamp
+  # entirely) -- the crop heuristic was tuned for a different show's layout.
+  # Leave false unless re-tuned (roi_top_pct/roi_bottom_pct/news_band_ratio
+  # in frame_skip.py) and re-validated for the source in use.
+  preprocess: false
+
+  # Frame-skip heuristics, cheapest first. All run on the CPU before GPU
+  # inference. Set any threshold to 0 to disable that check.
+  skip:
+    blank_brightness_threshold: 15   # mean luma below this = skip as blank
+    blur_threshold: 50.0             # Laplacian variance below this = skip as blurry
+    similarity_hamming_threshold: 8  # pHash distance <= this = reuse previous frame's result
+
+  ocr:
+    lang: "vi"
+    confidence_threshold: 0.75
+    # PP-OCRv6 ignores `lang` entirely (en/vi byte-identical); its marks are
+    # usually wrong while base letters are right, so ascii strips them --
+    # stage 2 restores the correct marks from the image instead.
+    ascii: true
+    ocr_version: null   # omit for paddleocr's current default (PP-OCRv6 as of 3.7.0)
+    # Measured to NOT fix word-merging ("TINCHINH"-type errors) -- kept only
+    # as an escape hatch, do not set without re-testing (see memory).
+    unclip_ratio: null
+
+correct:
+  # Same frames folder passed to run_paddle.sh / --input for stage 1.
+  frames_dir: "../../layer_2/Keyframe_Extracting/benchmark/pipeline_c"
+  paddle_output: "./output/output_vietocr.json"
+  output_file: "./output/output_hybrid.json"
+  # NVIDIA_API_KEY env var is required (or pass --api-key)
+  checkpoint_every: 20
+  # Concurrent requests to the ising-calibration API. An isolated 60-frame
+  # benchmark measured 6 as the sweet spot, but a real 714-frame run stalled
+  # visibly at 6 (key already warmed up from a day of testing) -- 4 is the
+  # current default based on that live observation. Re-measure before raising.
+  workers: 4

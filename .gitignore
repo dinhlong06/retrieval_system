@@ -1,0 +1,62 @@
+# Environments / dependency caches
+.pylibs*/
+.pipcache/
+.hf_cache/
+venv/
+env/
+__pycache__/
+*.pyc
+*.egg-info/
+node_modules/
+.model_cache/
+
+# Data / model caches (large, not meant for git)
+cache/
+dataset/
+dataset_batch1/
+eda_output/
+output/
+output_batch1/
+output_batch1_stale/
+frames/
+experiments/
+checkpoints/
+logs/
+wandb/
+tmp/
+temp/
+
+# Model weights / embeddings / large binaries
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.npy
+*.npz
+*.faiss
+*.index
+*.h5
+*.jsonl
+*.zip
+
+# Media
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.wav
+*.mp3
+
+# Has its own separate git repo
+search_module/
+layer_2/Keyframe_Extracting/unilm/
+
+# OS / editor
+.DS_Store
+*.log
+.ipynb_checkpoints/

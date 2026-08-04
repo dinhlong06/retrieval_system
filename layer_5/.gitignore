@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual env
+.venv/
+venv/
+
+# Milvus/Mongo/Elastic data volumes
+volumes/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Env / secrets
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code worktrees
+.claude/

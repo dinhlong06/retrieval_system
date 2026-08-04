@@ -1,0 +1,22 @@
+# Keyframe Extractor — Requirements
+# Đã có trong môi trường, liệt kê để tham khảo.
+
+# Core
+numpy==1.26.4
+opencv-python==4.10.0.84
+Pillow==10.4.0
+
+# Deep Learning
+torch==2.3.1
+torchvision==0.18.1
+
+# BEiT-3 dependencies (đã có trong unilm/beit3)
+timm==0.4.12
+torchscale==0.2.0
+sentencepiece
+
+# Config
+PyYAML==6.0.2
+
+# Utils
+tqdm==4.67.1
