@@ -25,6 +25,7 @@ logs/
 wandb/
 tmp/
 temp/
+docs/
 
 # Model weights / embeddings / large binaries
 *.pt
@@ -63,3 +64,8 @@ layer_2/Keyframe_Extracting/unilm/
 
 # Claude Code local state
 .claude/
+
+# Excluded from repo per request
+docs/
+eda_video_dataset.py
+eda_video_themes.py
