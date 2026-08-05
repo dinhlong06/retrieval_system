@@ -17,3 +17,4 @@ def test_create_index_mapping(es):
     assert props["ocr_text"]["copy_to"] == ["content_all"]
     assert props["object_tags"]["type"] == "keyword"
     assert props["frame_id"]["type"] == "keyword"
+    assert props["frame_idx"]["type"] == "long"

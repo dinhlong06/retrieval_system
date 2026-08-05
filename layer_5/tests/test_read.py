@@ -52,11 +52,12 @@ def test_search_vector_returns_hit(cfg, reader_with_data):
 
     assert len(hits) == 1
     hit = hits[0]
-    assert hit["frame_id"] == kfid
+    assert hit["keyframe_id"] == kfid
     assert hit["video_id"] == "v001"
     assert hit["shot_id"] == "v001_000007"
+    assert hit["frame_idx"] == 1501
     assert hit["timestamp_ms"] == 60040
-    assert set(hit.keys()) == {"frame_id", "video_id", "shot_id", "timestamp_ms", "score"}
+    assert set(hit.keys()) == {"keyframe_id", "video_id", "shot_id", "frame_idx", "timestamp_ms", "score"}
 
 
 @pytest.mark.integration
@@ -79,8 +80,9 @@ def test_search_ocr_matches_ocr_text(cfg, reader_with_data):
     hits = r.search_ocr("chợ hoa")
 
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
-    assert set(hits[0].keys()) == {"frame_id", "video_id", "shot_id", "timestamp_ms", "score"}
+    assert hits[0]["keyframe_id"] == kfid
+    assert hits[0]["frame_idx"] == 1501
+    assert set(hits[0].keys()) == {"keyframe_id", "video_id", "shot_id", "frame_idx", "timestamp_ms", "score"}
 
 
 @pytest.mark.integration
@@ -103,7 +105,7 @@ def test_search_asr_matches_shot_transcript(cfg, reader_with_data):
     hits = r.search_asr("lời thoại")
 
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
+    assert hits[0]["keyframe_id"] == kfid
 
 
 @pytest.mark.integration
@@ -116,22 +118,22 @@ def test_search_all_matches_across_sources(cfg, reader_with_data):
     hits_asr_term = r.search_all("lời thoại")   # từ transcript shot
 
     assert len(hits_ocr_term) == 1
-    assert hits_ocr_term[0]["frame_id"] == kfid
+    assert hits_ocr_term[0]["keyframe_id"] == kfid
     assert len(hits_asr_term) == 1
-    assert hits_asr_term[0]["frame_id"] == kfid
+    assert hits_asr_term[0]["keyframe_id"] == kfid
 
 
 @pytest.mark.integration
 def test_search_object_matches_label(cfg, reader_with_data):
-    _, mv, es, kfid, vec = reader_with_data
+    mongo, mv, es, kfid, vec = reader_with_data
     r = Reader.__new__(Reader)
-    r.mv, r.es, r.data_root = mv, es, cfg.data_root
+    r.mv, r.es, r.mongo, r.data_root = mv, es, mongo, cfg.data_root
 
     hits = r.search_object(["person"])
     hits_other = r.search_object(["car"])
 
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
+    assert hits[0]["keyframe_id"] == kfid
     assert hits[0]["score"] == 0.92  # confidence thật từ Mongo, không phải hằng số term-match
     assert hits_other == []
 
@@ -153,7 +155,7 @@ def test_get_frames_absolutizes_path_and_preserves_order(cfg, clean_mongo):
 
     result = r.get_frames(["v001_f0002", "v001_f0001", "v001_f0002"])
 
-    assert [d["frame_id"] for d in result] == ["v001_f0002", "v001_f0001", "v001_f0002"]
+    assert [d["keyframe_id"] for d in result] == ["v001_f0002", "v001_f0001", "v001_f0002"]
     assert result[0]["image_path"] == "/data/layer_2/x/v001_f0002.jpg"
 
 
@@ -172,7 +174,7 @@ def test_get_frames_skips_unknown_id(cfg, clean_mongo):
 
     result = r.get_frames(["v001_f0001", "does_not_exist"])
 
-    assert [d["frame_id"] for d in result] == ["v001_f0001"]
+    assert [d["keyframe_id"] for d in result] == ["v001_f0001"]
 
 
 @pytest.mark.integration

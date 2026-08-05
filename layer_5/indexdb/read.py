@@ -32,13 +32,14 @@ class Reader:
         flt = f'video_id in {video_ids}' if video_ids else None
         results = self.mv.client.search(
             collection_name=name, data=[vector], limit=top_k, filter=flt,
-            output_fields=["video_id", "shot_id", "timestamp_ms"],
+            output_fields=["video_id", "shot_id", "frame_idx", "timestamp_ms"],
         )
         return [
             {
-                "frame_id": hit["frame_id"],
+                "keyframe_id": hit["frame_id"],
                 "video_id": hit["entity"]["video_id"],
                 "shot_id": hit["entity"]["shot_id"],
+                "frame_idx": hit["entity"]["frame_idx"],
                 "timestamp_ms": hit["entity"]["timestamp_ms"],
                 "score": hit["distance"],
             }
@@ -68,10 +69,10 @@ class Reader:
         hits = self._search({"terms": {"object_tags": labels}}, top_k, video_ids)
         objects_by_frame = {
             d["_id"]: d["objects"]
-            for d in self.mongo.frames.find({"_id": {"$in": [h["frame_id"] for h in hits]}}, {"objects": 1})
+            for d in self.mongo.frames.find({"_id": {"$in": [h["keyframe_id"] for h in hits]}}, {"objects": 1})
         }
         for hit in hits:
-            objects = objects_by_frame[hit["frame_id"]]
+            objects = objects_by_frame[hit["keyframe_id"]]
             hit["score"] = max(objects[label] for label in labels if label in objects)
         hits.sort(key=lambda h: h["score"], reverse=True)
         return hits
@@ -82,9 +83,10 @@ class Reader:
         resp = self.es.client.search(index=self.es.index_name, query=es_query, size=top_k)
         return [
             {
-                "frame_id": hit["_source"]["frame_id"],
+                "keyframe_id": hit["_source"]["frame_id"],
                 "video_id": hit["_source"]["video_id"],
                 "shot_id": hit["_source"]["shot_id"],
+                "frame_idx": hit["_source"]["frame_idx"],
                 "timestamp_ms": hit["_source"]["timestamp_ms"],
                 "score": hit["_score"],
             }
@@ -98,7 +100,7 @@ class Reader:
             if i not in docs:
                 continue
             doc = dict(docs[i])
-            doc["frame_id"] = doc.pop("_id")
+            doc["keyframe_id"] = doc.pop("_id")
             doc["image_path"] = os.path.join(self.data_root, doc["image_path"])
             out.append(doc)
         return out

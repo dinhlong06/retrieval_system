@@ -56,6 +56,7 @@ docs/
 # Has its own separate git repo
 search_module/
 layer_2/Keyframe_Extracting/unilm/
+retrieval_system/
 
 # OS / editor
 .DS_Store

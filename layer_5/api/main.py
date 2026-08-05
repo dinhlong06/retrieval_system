@@ -11,7 +11,10 @@ app = FastAPI(
     description=(
         "HTTP wrapper quanh Mongo/Milvus/Elasticsearch của layer_5 để search và đọc "
         "dữ liệu đã ingest (không cần cài pymongo/pymilvus/elasticsearch hay join "
-        "Docker network). Mọi endpoint trừ /health cần header `X-API-Key`."
+        "Docker network). Mọi endpoint trừ /health cần header `X-API-Key`.\n\n"
+        "Mọi kết quả /search/* trả cả `keyframe_id` (khoá nội bộ, chỉ dùng để gọi lại "
+        "/frames) và `frame_idx` (số frame gốc trong video — **đây là giá trị phải "
+        "nộp bài**, không phải `keyframe_id`)."
     ),
 )
 
@@ -67,7 +70,7 @@ class FramesRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={
         "examples": [{"ids": ["v001_f0001", "v001_f0002"]}]
     })
-    ids: list[str]
+    ids: list[str] = Field(description="keyframe_id lấy từ kết quả /search/* — dùng nội bộ, không phải frame_id để nộp bài.")
 
 
 @app.get("/health", summary="Kiểm tra service còn sống")
@@ -132,11 +135,11 @@ def search_object(req: SearchObjectRequest, reader: Reader = Depends(get_reader)
 
 @app.post(
     "/frames", dependencies=[Depends(require_api_key)],
-    summary="Hydrate metadata đầy đủ cho danh sách frame_id",
+    summary="Hydrate metadata đầy đủ cho danh sách keyframe_id",
     description=(
         "Giữ nguyên thứ tự `ids` truyền vào, bỏ qua id không tồn tại. `image_path` trong "
         "response là đường dẫn tuyệt đối theo `DATA_ROOT` của server, chỉ dùng được trên "
-        "máy đã mount cùng dataset."
+        "máy đã mount cùng dataset. Response cũng có `frame_idx` — dùng giá trị này khi nộp bài."
     ),
 )
 def get_frames(req: FramesRequest, reader: Reader = Depends(get_reader)):

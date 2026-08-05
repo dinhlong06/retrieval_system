@@ -43,6 +43,7 @@ def build_es_doc(frame: dict, transcript: str = "") -> dict:
         "frame_id": frame["_id"],
         "video_id": frame["video_id"],
         "shot_id": frame["shot_id"],
+        "frame_idx": frame["frame_idx"],
         "timestamp_ms": frame["timestamp_ms"],
         "ocr_text": frame.get("ocr_text", ""),
         "ocr_api": frame.get("ocr_api", ""),

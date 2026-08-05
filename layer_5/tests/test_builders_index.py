@@ -13,6 +13,7 @@ def test_build_es_doc():
     assert doc["frame_id"] == "v001_f0001"
     assert doc["video_id"] == "v001"
     assert doc["shot_id"] == "v001_000007"
+    assert doc["frame_idx"] == 1523
     assert doc["timestamp_ms"] == 60920
     assert doc["ocr_text"] == "BẢN TIN"
     assert doc["caption"] == "một người"

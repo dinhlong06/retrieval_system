@@ -23,6 +23,7 @@ MAPPING = {
             "frame_id":     {"type": "keyword"},
             "video_id":     {"type": "keyword"},
             "shot_id":      {"type": "keyword"},
+            "frame_idx":    {"type": "long"},
             "timestamp_ms": {"type": "long"},
             "ocr_text":    {"type": "text", "analyzer": "vi_analyzer", "copy_to": "content_all"},
             # OCR có 2 nguồn: PaddleOCR gốc (ocr_text) và bản đã hiệu đính qua

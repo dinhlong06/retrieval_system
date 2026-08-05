@@ -60,11 +60,13 @@ hits += r.search_object(["person", "car"], top_k=100)  # match chính xác objec
 hits += r.search_all("chợ hoa tết", top_k=100)      # match trên content_all (gộp cả 3 nguồn text)
 # score của search_vector (Milvus COSINE) và search_ocr/search_asr (Elasticsearch BM25) không cùng thang đo —
 # nối rồi sort/slice chung như trên chỉ để demo, việc fuse điểm là của caller
-# mỗi hit: {"keyframe_id", "video_id", "shot_id", "timestamp_ms" (mili giây), "score"}
+# mỗi hit: {"keyframe_id", "video_id", "shot_id", "frame_idx", "timestamp_ms" (mili giây), "score"}
+# keyframe_id CHỈ dùng nội bộ để hydrate (get_frames) — khi nộp bài phải dùng frame_idx
+# (số frame gốc trong video, khớp [s,e] của BTC), không phải keyframe_id.
 # video_ids=[] (rỗng/None) nghĩa là KHÔNG lọc, không phải "không khớp gì"
 
 # hydrate — lấy đủ metadata + đường dẫn ảnh tuyệt đối để hiển thị/predict
-kfs = r.get_keyframes([h["keyframe_id"] for h in hits[:20]])
+kfs = r.get_frames([h["keyframe_id"] for h in hits[:20]])
 kfs[0]["image_path"]   # "/data/layer_2/Keyframe_Extracting/benchmark/pipeline_c/K01_V001/..."
 
 # danh sách shot của 1 video, sắp theo start_ms

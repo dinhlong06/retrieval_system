@@ -39,8 +39,9 @@ def test_search_vector_endpoint_returns_hits(cfg, reader_with_data, api_client):
     assert resp.status_code == 200
     hits = resp.json()
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
-    assert set(hits[0].keys()) == {"frame_id", "video_id", "shot_id", "timestamp_ms", "score"}
+    assert hits[0]["keyframe_id"] == kfid
+    assert hits[0]["frame_idx"] == 1501
+    assert set(hits[0].keys()) == {"keyframe_id", "video_id", "shot_id", "frame_idx", "timestamp_ms", "score"}
 
 
 def test_missing_api_key_env_rejects_any_request(monkeypatch):
@@ -96,7 +97,8 @@ def test_search_ocr_endpoint_returns_hits(cfg, reader_with_data, api_client):
     assert resp.status_code == 200
     hits = resp.json()
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
+    assert hits[0]["keyframe_id"] == kfid
+    assert hits[0]["frame_idx"] == 1501
 
 
 @pytest.mark.integration
@@ -112,7 +114,8 @@ def test_search_asr_endpoint_returns_hits(cfg, reader_with_data, api_client):
     assert resp.status_code == 200
     hits = resp.json()
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
+    assert hits[0]["keyframe_id"] == kfid
+    assert hits[0]["frame_idx"] == 1501
 
 
 @pytest.mark.integration
@@ -128,14 +131,15 @@ def test_search_all_endpoint_returns_hits(cfg, reader_with_data, api_client):
     assert resp.status_code == 200
     hits = resp.json()
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
+    assert hits[0]["keyframe_id"] == kfid
+    assert hits[0]["frame_idx"] == 1501
 
 
 @pytest.mark.integration
 def test_search_object_endpoint_returns_hits(cfg, reader_with_data, api_client):
-    _, mv, es, kfid, vec = reader_with_data
+    mongo, mv, es, kfid, vec = reader_with_data
     test_reader = Reader.__new__(Reader)
-    test_reader.mv, test_reader.es, test_reader.data_root = mv, es, cfg.data_root
+    test_reader.mv, test_reader.es, test_reader.mongo, test_reader.data_root = mv, es, mongo, cfg.data_root
     app.dependency_overrides[get_reader] = lambda: test_reader
 
     resp = api_client.post("/search/object", json={"labels": ["person"]},
@@ -144,7 +148,8 @@ def test_search_object_endpoint_returns_hits(cfg, reader_with_data, api_client):
     assert resp.status_code == 200
     hits = resp.json()
     assert len(hits) == 1
-    assert hits[0]["frame_id"] == kfid
+    assert hits[0]["keyframe_id"] == kfid
+    assert hits[0]["frame_idx"] == 1501
 
 
 @pytest.mark.integration
@@ -170,7 +175,7 @@ def test_frames_endpoint_preserves_order_and_skips_unknown(cfg, clean_mongo, api
 
     assert resp.status_code == 200
     body = resp.json()
-    assert [d["frame_id"] for d in body] == ["v001_f0002", "v001_f0001"]
+    assert [d["keyframe_id"] for d in body] == ["v001_f0002", "v001_f0001"]
     assert body[0]["image_path"] == "/data/layer_2/x/v001_f0002.jpg"
 
 
