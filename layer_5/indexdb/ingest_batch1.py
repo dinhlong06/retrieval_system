@@ -75,6 +75,7 @@ def main():
     ap.add_argument("--ocr", help="đường dẫn output_vietocr.json (OCR batch1, key theo {video_id}_{n:03d})")
     ap.add_argument("--siglip-dir", help="thư mục siglip batch1 ({video_id}.npy + {video_id}_ids.json, ids theo n)")
     ap.add_argument("--videos", nargs="*")
+    ap.add_argument("--resume", action="store_true", help="bỏ qua video đã nạp xong")
     args = ap.parse_args()
 
     mk_dir = os.path.join(args.root, "map-keyframes")
@@ -88,6 +89,10 @@ def main():
     mv = MilvusStore(cfg)
 
     for video_id in video_ids:
+        if args.resume and store.ingest_status.find_one({"_id": video_id, "steps.elastic.status": "done"}):
+            print(f"{video_id}: bỏ qua (đã xong)")
+            continue
+
         rows = _read_map_keyframes(os.path.join(mk_dir, f"{video_id}.csv"))
 
         frame_ids = []
