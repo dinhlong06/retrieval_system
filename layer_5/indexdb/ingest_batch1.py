@@ -2,11 +2,16 @@
 
     python -m indexdb.ingest_batch1 --root /path/dataset_batch1 \\
         [--ocr layer_3/OCR/output_batch1/output_vietocr.json] \\
-        [--siglip-dir recap_siglip/artifacts/siglip_batch1] [--videos L21_V001 ...]
+        [--objects layer_3/ObjectDetection/output_batch1/detections.json] \\
+        [--siglip-dir recap_siglip/artifacts/siglip_batch1] [--siglip2-dir siglip_output] \\
+        [--videos L21_V001 ...]
 
-Batch1 không có shot detection/transcript riêng — chỉ có map-keyframes, ảnh
-keyframe, object detection (Faster R-CNN/OpenImages) và CLIP-32 embedding do
-BTC cung cấp sẵn. shot_id để rỗng, backfill sau khi có shot data.
+shot_id được backfill từ layer_1/batch1/shots.jsonl (TransNetV2 chạy trên
+dataset_batch1/videos, xem layer_1/run_shards_batch1.sh) bằng cách khớp
+frame_idx của từng keyframe vào khoảng [start_frame, end_frame] của shot.
+Video/frame chưa có shot data (shots.jsonl chưa chạy hoặc chưa tới) thì
+shot_id để rỗng như trước. Transcript theo shot lấy từ
+layer_2/shot_transcript/shot_transcripts_batch1.jsonl.
 
 frame_id = {video_id}_{n:03d} theo thứ tự keyframe "n", khớp sẵn với khoá của
 OCR/siglip và tên file ảnh. Không dùng frame_idx làm khoá vì 614 keyframe
@@ -14,6 +19,7 @@ OCR/siglip và tên file ảnh. Không dùng frame_idx làm khoá vì 614 keyfra
 mất ảnh còn Milvus lại giữ hai entity cùng primary key.
 """
 import argparse
+import bisect
 import csv
 import json
 import os
@@ -30,22 +36,60 @@ from indexdb.writers import MongoWriter
 
 MIN_CONF = 0.5
 
+_DATA_ROOT = os.getenv("DATA_ROOT", "/data")
+DEFAULT_SHOTS_PATH = os.path.join(_DATA_ROOT, "layer_1", "batch1", "shots.jsonl")
+DEFAULT_TRANSCRIPTS_PATH = os.path.join(
+    _DATA_ROOT, "layer_2", "shot_transcript", "shot_transcripts_batch1.jsonl")
+
 
 def _read_map_keyframes(path):
     with open(path, encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f))
 
 
-def _load_objects(path):
-    if not os.path.exists(path):
-        return None
+def _group_by_video(path):
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
     with open(path, encoding="utf-8") as f:
-        d = json.load(f)
-    objects = {}
-    for label, score in zip(d["detection_class_entities"], (float(s) for s in d["detection_scores"])):
-        if score >= MIN_CONF:
-            objects[label] = max(objects.get(label, 0.0), score)
-    return objects
+        for line in f:
+            rec = json.loads(line)
+            out.setdefault(rec["video_id"], []).append(rec)
+    return out
+
+
+def _build_shot_lookup(shots_by_video):
+    """video_id -> (start_frame đã sort, list shot tương ứng) để tra shot_id qua frame_idx."""
+    lookup = {}
+    for video_id, shots in shots_by_video.items():
+        ordered = sorted(shots, key=lambda s: s["start_frame"])
+        lookup[video_id] = ([s["start_frame"] for s in ordered], ordered)
+    return lookup
+
+
+def _find_shot_id(lookup, video_id, frame_idx):
+    starts, ordered = lookup.get(video_id, ([], []))
+    i = bisect.bisect_right(starts, frame_idx) - 1
+    if i < 0:
+        return ""
+    shot = ordered[i]
+    return shot["shot_id"] if frame_idx <= shot["end_frame"] else ""
+
+
+def _load_objects(path):
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        rows = json.load(f)
+    objects_by_frame = {}
+    for r in rows:
+        labels = {}
+        for o in r["objects"]:
+            if o["confidence"] >= MIN_CONF:
+                labels[o["label"]] = max(labels.get(o["label"], 0.0), o["confidence"])
+        if labels:
+            objects_by_frame[r["frame_id"]] = labels
+    return objects_by_frame
 
 
 def _load_ocr(path):
@@ -73,7 +117,13 @@ def main():
     ap = argparse.ArgumentParser(prog="indexdb.ingest_batch1")
     ap.add_argument("--root", required=True, help="thư mục dataset_batch1")
     ap.add_argument("--ocr", help="đường dẫn output_vietocr.json (OCR batch1, key theo {video_id}_{n:03d})")
+    ap.add_argument("--objects", help="đường dẫn detections.json (object detection batch1, key theo frame_id)")
     ap.add_argument("--siglip-dir", help="thư mục siglip batch1 ({video_id}.npy + {video_id}_ids.json, ids theo n)")
+    ap.add_argument("--siglip2-dir", help="thư mục siglip2 batch1, cùng format --siglip-dir (1152 chiều)")
+    ap.add_argument("--shots", default=DEFAULT_SHOTS_PATH,
+                    help="shots.jsonl batch1 (layer_1/run_shards_batch1.sh); dùng để backfill shot_id qua frame_idx")
+    ap.add_argument("--transcripts", default=DEFAULT_TRANSCRIPTS_PATH,
+                    help="shot_transcripts_batch1.jsonl (layer_2/shot_transcript/run_batch1.sh)")
     ap.add_argument("--videos", nargs="*")
     ap.add_argument("--resume", action="store_true", help="bỏ qua video đã nạp xong")
     args = ap.parse_args()
@@ -81,6 +131,12 @@ def main():
     mk_dir = os.path.join(args.root, "map-keyframes")
     video_ids = args.videos or sorted(f[:-4] for f in os.listdir(mk_dir) if f.endswith(".csv"))
     ocr = _load_ocr(args.ocr)
+    objects_by_frame = _load_objects(args.objects)
+    shots_by_video = _group_by_video(args.shots)
+    shot_lookup = _build_shot_lookup(shots_by_video)
+    transcripts = {r["shot_id"]: r["text"] for r in
+                   (json.loads(l) for l in open(args.transcripts, encoding="utf-8"))} \
+        if os.path.exists(args.transcripts) else {}
 
     cfg = Config.from_env()
     store = MongoStore(cfg)
@@ -102,15 +158,21 @@ def main():
             frame_ids.append(frame_id)
             image_path = os.path.relpath(
                 os.path.join(args.root, "keyframe", "keyframes", video_id, f"{n}.jpg"), args.root)
+            frame_idx = int(row["frame_idx"])
+            shot_id = _find_shot_id(shot_lookup, video_id, frame_idx)
             writer.upsert_frame({
-                "keyframe_id": frame_id, "video_id": video_id, "shot_id": "",
-                "frame_idx": int(row["frame_idx"]), "timestamp_ms": round(float(row["pts_time"]) * 1000),
+                "keyframe_id": frame_id, "video_id": video_id, "shot_id": shot_id,
+                "frame_idx": frame_idx, "timestamp_ms": round(float(row["pts_time"]) * 1000),
                 "image_path": image_path, "batch": "batch1",
             })
-            objects = _load_objects(os.path.join(args.root, "objects", video_id, f"{n}.json"))
+            objects = objects_by_frame.get(frame_id)
             ocr_text = ocr.get(frame_id)
-            if objects or ocr_text:
-                writer.enrich_frame(frame_id, objects=objects, ocr_text=ocr_text)
+            if objects or ocr_text or shot_id:
+                writer.enrich_frame(frame_id, objects=objects, ocr_text=ocr_text,
+                                    shot_id=shot_id or None)
+
+        for shot in shots_by_video.get(video_id, []):
+            writer.upsert_shot(shot, transcript=transcripts.get(shot["shot_id"], ""))
 
         media_info_path = os.path.join(args.root, "media-info", f"{video_id}.json")
         video_doc = {"_id": video_id, "fps": float(rows[0]["fps"]), "batch": "batch1"}
@@ -125,14 +187,13 @@ def main():
             if os.path.exists(clip_path) else 0
         models = ["clip32"]
 
-        if args.siglip_dir:
-            npy_path = os.path.join(args.siglip_dir, f"{video_id}.npy")
-            ids_path = os.path.join(args.siglip_dir, f"{video_id}_ids.json")
-            if os.path.exists(npy_path):
-                with open(ids_path, encoding="utf-8") as f:
-                    siglip_frame_ids = [f"{video_id}_{i}" for i in json.load(f)]
-                n_vec += _index_vectors(store, mv, video_id, "siglip", np.load(npy_path), siglip_frame_ids)
-                models.append("siglip")
+        for model, emb_dir in (("siglip", args.siglip_dir), ("siglip2", args.siglip2_dir)):
+            npy_path = os.path.join(emb_dir or "", f"{video_id}.npy")
+            if emb_dir and os.path.exists(npy_path):
+                with open(os.path.join(emb_dir, f"{video_id}_ids.json"), encoding="utf-8") as f:
+                    emb_frame_ids = [f"{video_id}_{i}" for i in json.load(f)]
+                n_vec += _index_vectors(store, mv, video_id, model, np.load(npy_path), emb_frame_ids)
+                models.append(model)
         writer.mark_step(video_id, "milvus", "done", n_vec)
 
         n_es = es_idx.index_video(video_id)

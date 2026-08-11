@@ -72,6 +72,18 @@ def test_search_vector_empty_for_unseen_video(cfg, reader_with_data):
 
 
 @pytest.mark.integration
+def test_search_vector_min_score_filters_by_cosine_similarity(cfg, reader_with_data):
+    _, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.data_root = mv, es, cfg.data_root
+
+    # vec so với chính nó -> cosine ~1.0, luôn qua ngưỡng thấp
+    assert len(r.search_vector("beit3", vec.tolist(), top_k=5, min_score=0.5)) == 1
+    # ngưỡng cao hơn cosine tối đa lý thuyết (1.0) -> rỗng
+    assert r.search_vector("beit3", vec.tolist(), top_k=5, min_score=1.5) == []
+
+
+@pytest.mark.integration
 def test_search_ocr_matches_ocr_text(cfg, reader_with_data):
     _, mv, es, kfid, vec = reader_with_data
     r = Reader.__new__(Reader)
@@ -97,6 +109,47 @@ def test_search_ocr_empty_for_unseen_video(cfg, reader_with_data):
 
 
 @pytest.mark.integration
+def test_search_ocr_filters_by_frame_ids(cfg, reader_with_data):
+    _, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.data_root = mv, es, cfg.data_root
+
+    assert [h["keyframe_id"] for h in r.search_ocr("chợ hoa", frame_ids=[kfid, "v001_f9999"])] == [kfid]
+    assert r.search_ocr("chợ hoa", frame_ids=["v001_f9999"]) == []
+
+
+@pytest.mark.integration
+def test_search_ocr_empty_frame_ids_matches_nothing(cfg, reader_with_data):
+    _, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.data_root = mv, es, cfg.data_root
+
+    # [] = candidate list rỗng → rỗng; None = không lọc. Khác convention của video_ids.
+    assert r.search_ocr("chợ hoa", frame_ids=[]) == []
+    assert len(r.search_ocr("chợ hoa", frame_ids=None)) == 1
+
+
+@pytest.mark.integration
+def test_search_ocr_combines_video_and_frame_filters(cfg, reader_with_data):
+    _, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.data_root = mv, es, cfg.data_root
+
+    assert len(r.search_ocr("chợ hoa", video_ids=["v001"], frame_ids=[kfid])) == 1
+    assert r.search_ocr("chợ hoa", video_ids=["v999"], frame_ids=[kfid]) == []
+
+
+@pytest.mark.integration
+def test_search_object_filters_by_frame_ids(cfg, reader_with_data):
+    mongo, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.mongo, r.data_root = mv, es, mongo, cfg.data_root
+
+    assert len(r.search_object(["person"], frame_ids=[kfid])) == 1
+    assert r.search_object(["person"], frame_ids=["v001_f9999"]) == []
+
+
+@pytest.mark.integration
 def test_search_asr_matches_shot_transcript(cfg, reader_with_data):
     _, mv, es, kfid, vec = reader_with_data
     r = Reader.__new__(Reader)
@@ -106,6 +159,31 @@ def test_search_asr_matches_shot_transcript(cfg, reader_with_data):
 
     assert len(hits) == 1
     assert hits[0]["keyframe_id"] == kfid
+
+
+@pytest.mark.integration
+def test_search_asr_min_score_filters_by_bm25_score(cfg, reader_with_data):
+    _, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.data_root = mv, es, cfg.data_root
+
+    hits = r.search_asr("lời thoại")
+    assert len(hits) == 1
+    score = hits[0]["score"]
+
+    assert len(r.search_asr("lời thoại", min_score=score - 0.01)) == 1
+    assert r.search_asr("lời thoại", min_score=score + 0.01) == []
+
+
+@pytest.mark.integration
+def test_search_object_min_score_filters_by_confidence(cfg, reader_with_data):
+    mongo, mv, es, kfid, vec = reader_with_data
+    r = Reader.__new__(Reader)
+    r.mv, r.es, r.mongo, r.data_root = mv, es, mongo, cfg.data_root
+
+    # confidence thật của "person" trong fixture là 0.92
+    assert len(r.search_object(["person"], min_score=0.9)) == 1
+    assert r.search_object(["person"], min_score=0.95) == []
 
 
 @pytest.mark.integration

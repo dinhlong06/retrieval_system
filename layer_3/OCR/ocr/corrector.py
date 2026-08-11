@@ -28,6 +28,7 @@ import base64
 import re
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -42,6 +43,15 @@ MODEL = "nvidia/ising-calibration-1.5-31b"
 # treating a 429 as a hard failure.
 MAX_RETRIES = 8
 RETRY_BACKOFF = 1.5
+
+# requests' own `timeout=` sometimes fails to fire -- caught live via
+# faulthandler on 2026-08-10: 4 worker threads stuck in ssl.py's socket
+# read for 140s+ straight past the configured 60s, hanging the whole pool
+# forever (no exception, no retry, no progress). This wraps each attempt in
+# its own thread with a wall-clock deadline that WILL fire regardless of
+# what the underlying socket does. The hung thread is abandoned (Python
+# can't kill a thread) but no longer blocks the worker pool.
+REQUEST_HARD_TIMEOUT = 90
 
 PROMPT = """Đây là {n} dòng OCR thô đọc từ ảnh này. Chúng bị MẤT KÝ TỰ và MẤT DẤU tiếng Việt:
 
@@ -189,12 +199,22 @@ def correct(
     }
     resp = None
     for attempt in range(MAX_RETRIES):
-        resp = requests.post(
+        # shutdown(wait=False): if fut.result() times out, the request thread
+        # is abandoned rather than joined -- joining would just re-hang here.
+        one = ThreadPoolExecutor(max_workers=1)
+        fut = one.submit(
+            requests.post,
             API_URL,
             headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
             json=payload,
             timeout=60,
         )
+        try:
+            resp = fut.result(timeout=REQUEST_HARD_TIMEOUT)
+        except FutureTimeoutError:
+            one.shutdown(wait=False)
+            return raw_texts, "hang_timeout"
+        one.shutdown(wait=False)
         if resp.status_code != 429:
             break
         time.sleep(RETRY_BACKOFF * (attempt + 1))

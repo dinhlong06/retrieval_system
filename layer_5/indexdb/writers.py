@@ -31,12 +31,13 @@ class MongoWriter:
         return doc["_id"]
 
     def enrich_frame(self, frame_id: str, objects=None, ocr_text=None, caption=None,
-                     ocr_api=None):
+                     ocr_api=None, shot_id=None):
         update = {}
         if objects is not None:  update["objects"] = objects
         if ocr_text is not None: update["ocr_text"] = ocr_text
         if ocr_api is not None:  update["ocr_api"] = ocr_api
         if caption is not None:  update["caption"] = caption
+        if shot_id is not None:  update["shot_id"] = shot_id
         if update:
             self.store.frames.update_one({"_id": frame_id}, {"$set": update})
 

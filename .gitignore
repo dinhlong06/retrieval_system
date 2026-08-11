@@ -26,6 +26,8 @@ wandb/
 tmp/
 temp/
 docs/
+batch1/
+*output/
 
 # Model weights / embeddings / large binaries
 *.pt
@@ -57,6 +59,14 @@ docs/
 search_module/
 layer_2/Keyframe_Extracting/unilm/
 retrieval_system/
+
+# Markdown notes (keep READMEs and CLAUDE.md)
+*.md
+!README*.md
+!CLAUDE.md
+
+# NFS stale-handle artifacts
+.nfs*
 
 # OS / editor
 .DS_Store

@@ -12,8 +12,8 @@
 #         ./run.sh ingest --resume                     # chỉ video mới
 #         ./run.sh ingest                              # cập nhật OCR/object/caption
 #         ./run.sh ingest --purge --videos K01_V001    # layer_2 chạy lại
-#   ./run.sh ingest-batch1 [cờ...]     # nạp dataset_batch1 (BTC) kèm sẵn OCR vietocr + siglip batch1,
-#                                      # cờ thêm truyền thẳng cho indexdb.ingest_batch1 (--ocr/--siglip-dir ghi đè được):
+#   ./run.sh ingest-batch1 [cờ...]     # nạp dataset_batch1 (BTC) kèm sẵn OCR vietocr + object detection + siglip/siglip2 batch1,
+#                                      # cờ thêm truyền thẳng cho indexdb.ingest_batch1 (--ocr/--objects/--siglip-dir/--siglip2-dir ghi đè được):
 #         ./run.sh ingest-batch1 --videos L21_V001      # 1 video
 #         ./run.sh ingest-batch1                        # toàn bộ dataset_batch1
 #   ./run.sh shell                     # python REPL đã nối sẵn 3 DB
@@ -102,7 +102,9 @@ ingest-batch1)
     shift
     py -m indexdb.ingest_batch1 --root /data/dataset_batch1 \
         --ocr /data/layer_3/OCR/output_batch1/output_vietocr.json \
-        --siglip-dir /data/recap_siglip/artifacts/siglip_batch1 "$@"
+        --objects /data/layer_3/ObjectDetection/output_batch1/detections.json \
+        --siglip-dir /data/recap_siglip/artifacts/siglip_batch1 \
+        --siglip2-dir /data/siglip_output "$@"
     ;;
 shell)
     docker build -q -t "$IMAGE" . > /dev/null

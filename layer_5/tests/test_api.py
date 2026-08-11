@@ -102,6 +102,21 @@ def test_search_ocr_endpoint_returns_hits(cfg, reader_with_data, api_client):
 
 
 @pytest.mark.integration
+def test_search_ocr_endpoint_filters_by_frame_ids(cfg, reader_with_data, api_client):
+    _, mv, es, kfid, vec = reader_with_data
+    test_reader = Reader.__new__(Reader)
+    test_reader.mv, test_reader.es, test_reader.data_root = mv, es, cfg.data_root
+    app.dependency_overrides[get_reader] = lambda: test_reader
+
+    def post(body):
+        return api_client.post("/search/ocr", json=body, headers={"X-API-Key": "secret123"}).json()
+
+    assert [h["keyframe_id"] for h in post({"query": "chợ hoa", "frame_ids": [kfid]})] == [kfid]
+    assert post({"query": "chợ hoa", "frame_ids": ["v001_f9999"]}) == []
+    assert post({"query": "chợ hoa", "frame_ids": []}) == []  # [] = không khớp gì, khác video_ids
+
+
+@pytest.mark.integration
 def test_search_asr_endpoint_returns_hits(cfg, reader_with_data, api_client):
     _, mv, es, kfid, vec = reader_with_data
     test_reader = Reader.__new__(Reader)
@@ -116,6 +131,49 @@ def test_search_asr_endpoint_returns_hits(cfg, reader_with_data, api_client):
     assert len(hits) == 1
     assert hits[0]["keyframe_id"] == kfid
     assert hits[0]["frame_idx"] == 1501
+
+
+@pytest.mark.integration
+def test_search_asr_endpoint_filters_by_min_score(cfg, reader_with_data, api_client):
+    _, mv, es, kfid, vec = reader_with_data
+    test_reader = Reader.__new__(Reader)
+    test_reader.mv, test_reader.es, test_reader.data_root = mv, es, cfg.data_root
+    app.dependency_overrides[get_reader] = lambda: test_reader
+
+    resp = api_client.post("/search/asr", json={"query": "lời thoại", "min_score": 1000.0},
+                            headers={"X-API-Key": "secret123"})
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.integration
+def test_search_object_endpoint_filters_by_min_score(cfg, reader_with_data, api_client):
+    mongo, mv, es, kfid, vec = reader_with_data
+    test_reader = Reader.__new__(Reader)
+    test_reader.mv, test_reader.es, test_reader.mongo, test_reader.data_root = mv, es, mongo, cfg.data_root
+    app.dependency_overrides[get_reader] = lambda: test_reader
+
+    resp = api_client.post("/search/object", json={"labels": ["person"], "min_score": 0.95},
+                            headers={"X-API-Key": "secret123"})
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.integration
+def test_search_vector_endpoint_filters_by_min_score(cfg, reader_with_data, api_client):
+    _, mv, es, kfid, vec = reader_with_data
+    test_reader = Reader.__new__(Reader)
+    test_reader.mv, test_reader.es, test_reader.data_root = mv, es, cfg.data_root
+    app.dependency_overrides[get_reader] = lambda: test_reader
+
+    resp = api_client.post("/search/vector",
+                            json={"model": "beit3", "vector": vec.tolist(), "top_k": 5, "min_score": 1.5},
+                            headers={"X-API-Key": "secret123"})
+
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 @pytest.mark.integration

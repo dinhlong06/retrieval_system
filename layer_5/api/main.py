@@ -5,6 +5,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from indexdb.read import Reader
 
 VIDEO_IDS_DESC = "Lọc theo video_id. Rỗng hoặc không truyền (None) nghĩa là KHÔNG lọc, không phải \"không khớp gì\"."
+FRAME_IDS_DESC = (
+    "Giới hạn search trong tập keyframe_id này (rerank trên candidate có sẵn, ví dụ từ "
+    "/search/vector). Khác `video_ids`: không truyền (None) nghĩa là KHÔNG lọc, nhưng "
+    "list rỗng `[]` nghĩa là KHÔNG khớp gì và trả về rỗng. Tối đa 65536 id."
+)
+MIN_SCORE_DESC = (
+    "Chỉ giữ hit có `score` >= giá trị này. Lọc trước khi cắt `top_k`, nên top_k vẫn là "
+    "trần an toàn (số hit tối đa trả về), không phải cỡ mẫu để lọc min_score từ đó. "
+    "Không truyền (None) nghĩa là không lọc.\n\n"
+    "Không có top_k=None (\"không giới hạn\") vì cả Milvus và Elasticsearch đều bắt buộc "
+    "limit — muốn lấy hết hit đạt min_score, tự đặt top_k lớn (tối đa 16384 với "
+    "/search/vector, 10000 với các endpoint text); vượt mức này server trả lỗi."
+)
 
 app = FastAPI(
     title="AIC2026 Read API",
@@ -39,31 +52,46 @@ class SearchVectorRequest(BaseModel):
         "examples": [
             {"model": "beit3", "vector": [0.01, -0.02, "... (1024 chiều)"], "top_k": 20},
             {"model": "siglip", "vector": [0.01, -0.02, "... (1152 chiều)"], "top_k": 20},
+            {"model": "siglip2", "vector": [0.01, -0.02, "... (1152 chiều)"], "top_k": 20},
             {"model": "clip32", "vector": [0.01, -0.02, "... (512 chiều)"], "top_k": 20},
         ]
     })
-    model: Literal["beit3", "siglip", "clip32"]
+    model: Literal["beit3", "siglip", "siglip2", "clip32"]
     vector: list[float]
     top_k: int = 100
     video_ids: list[str] | None = Field(default=None, description=VIDEO_IDS_DESC)
+    min_score: float | None = Field(default=None, description=MIN_SCORE_DESC)
 
 
 class SearchQueryRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={
-        "examples": [{"query": "một khu chợ hoa", "top_k": 20}]
+        "examples": [
+            {"query": "một khu chợ hoa", "top_k": 20},
+            {"query": "một khu chợ hoa", "top_k": 20, "frame_ids": ["v001_f0001", "v001_f0002"]},
+        ]
     })
     query: str
     top_k: int = 100
     video_ids: list[str] | None = Field(default=None, description=VIDEO_IDS_DESC)
+    frame_ids: list[str] | None = Field(default=None, max_length=65536, description=FRAME_IDS_DESC)
+
+
+class SearchAsrRequest(SearchQueryRequest):
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [{"query": "một khu chợ hoa", "top_k": 20, "min_score": 5.0}]
+    })
+    min_score: float | None = Field(default=None, description=MIN_SCORE_DESC)
 
 
 class SearchObjectRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={
-        "examples": [{"labels": ["person", "car"], "top_k": 20}]
+        "examples": [{"labels": ["person", "car"], "top_k": 20, "min_score": 0.8}]
     })
     labels: list[str]
     top_k: int = 100
     video_ids: list[str] | None = Field(default=None, description=VIDEO_IDS_DESC)
+    frame_ids: list[str] | None = Field(default=None, max_length=65536, description=FRAME_IDS_DESC)
+    min_score: float | None = Field(default=None, description=MIN_SCORE_DESC)
 
 
 class FramesRequest(BaseModel):
@@ -83,11 +111,15 @@ def health():
     summary="Tìm bằng vector embedding (candidate generation)",
     description=(
         "Bạn tự encode text/ảnh thành vector, Reader không encode hộ. `model` là "
-        "`beit3` (1024D), `siglip` (1152D) hoặc `clip32` (512D). Score là Milvus COSINE similarity."
+        "`beit3` (1024D), `siglip` (1152D), `siglip2` (1152D) hoặc `clip32` (512D). Score là Milvus COSINE similarity "
+        "(∈ [-1, 1]), `min_score` lọc trực tiếp trên thang này qua Milvus range search.\n\n"
+        "Không hỗ trợ `frame_ids` (chỉ các endpoint text mới lọc được theo frame) — "
+        "pipeline rerank là: lấy candidate rộng ở đây rồi truyền `frame_ids` vào `/search/*` text."
     ),
 )
 def search_vector(req: SearchVectorRequest, reader: Reader = Depends(get_reader)):
-    return reader.search_vector(req.model, req.vector, top_k=req.top_k, video_ids=req.video_ids)
+    return reader.search_vector(req.model, req.vector, top_k=req.top_k, video_ids=req.video_ids,
+                                 min_score=req.min_score)
 
 
 @app.post(
@@ -96,7 +128,7 @@ def search_vector(req: SearchVectorRequest, reader: Reader = Depends(get_reader)
     description="Match trên `ocr_text` (PaddleOCR gốc) + `ocr_api` (đã hiệu đính). Score là BM25.",
 )
 def search_ocr(req: SearchQueryRequest, reader: Reader = Depends(get_reader)):
-    return reader.search_ocr(req.query, top_k=req.top_k, video_ids=req.video_ids)
+    return reader.search_ocr(req.query, top_k=req.top_k, video_ids=req.video_ids, frame_ids=req.frame_ids)
 
 
 @app.post(
@@ -104,11 +136,14 @@ def search_ocr(req: SearchQueryRequest, reader: Reader = Depends(get_reader)):
     summary="Tìm theo lời thoại (ASR/transcript)",
     description=(
         "Match trên `transcript` của shot. Transcript được copy vào mọi keyframe thuộc shot "
-        "đó, nên nhiều keyframe cùng shot có thể trả về cùng score."
+        "đó, nên nhiều keyframe cùng shot có thể trả về cùng score. `min_score` cắt theo "
+        "BM25 score — hữu ích để cắt gọn theo ranh giới shot thay vì cắt giữa cụm score bằng nhau, "
+        "nhưng lưu ý BM25 không chuẩn hoá: ngưỡng hợp lý cho query này chưa chắc hợp lý cho query khác."
     ),
 )
-def search_asr(req: SearchQueryRequest, reader: Reader = Depends(get_reader)):
-    return reader.search_asr(req.query, top_k=req.top_k, video_ids=req.video_ids)
+def search_asr(req: SearchAsrRequest, reader: Reader = Depends(get_reader)):
+    return reader.search_asr(req.query, top_k=req.top_k, video_ids=req.video_ids, frame_ids=req.frame_ids,
+                              min_score=req.min_score)
 
 
 @app.post(
@@ -117,7 +152,7 @@ def search_asr(req: SearchQueryRequest, reader: Reader = Depends(get_reader)):
     description="Match trên `content_all`. Dùng khi không cần biết khớp từ nguồn nào, chỉ cần tìm nhanh.",
 )
 def search_all(req: SearchQueryRequest, reader: Reader = Depends(get_reader)):
-    return reader.search_all(req.query, top_k=req.top_k, video_ids=req.video_ids)
+    return reader.search_all(req.query, top_k=req.top_k, video_ids=req.video_ids, frame_ids=req.frame_ids)
 
 
 @app.post(
@@ -126,11 +161,14 @@ def search_all(req: SearchQueryRequest, reader: Reader = Depends(get_reader)):
     description=(
         "Match chính xác `labels` trong `object_tags` (không fuzzy). `score` trong kết quả "
         "là confidence thật của detector (lớn nhất giữa các object cùng nhãn trong 1 khung hình), "
-        "không phải điểm term-match."
+        "không phải điểm term-match. `min_score` lọc trên confidence này — nhưng vì confidence chỉ "
+        "biết được SAU khi lấy `top_k` hit từ Elasticsearch (ES không có confidence), hit confidence "
+        "cao có thể bị bỏ sót nếu nằm ngoài top_k ban đầu. Đặt top_k dư ra khi dùng kèm min_score."
     ),
 )
 def search_object(req: SearchObjectRequest, reader: Reader = Depends(get_reader)):
-    return reader.search_object(req.labels, top_k=req.top_k, video_ids=req.video_ids)
+    return reader.search_object(req.labels, top_k=req.top_k, video_ids=req.video_ids, frame_ids=req.frame_ids,
+                                 min_score=req.min_score)
 
 
 @app.post(

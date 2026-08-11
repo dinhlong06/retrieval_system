@@ -39,7 +39,8 @@ MAPPING = {
 
 class ElasticStore:
     def __init__(self, cfg: Config, index_name: str = "frame_text"):
-        self.client = Elasticsearch(cfg.elastic_uri)
+        self.client = Elasticsearch(cfg.elastic_uri, request_timeout=60,
+                                    retry_on_timeout=True, max_retries=5)
         self.index_name = index_name
 
     def create_index(self):
